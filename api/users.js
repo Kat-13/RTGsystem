@@ -1,5 +1,5 @@
 // Vercel API Route for RTG User Management with Supabase
-import { createClient } from '@supabase/supabase-js';
+const { createClient } = require('@supabase/supabase-js');
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -17,7 +17,7 @@ function successResponse(res, data, statusCode = 200) {
   return res.status(statusCode).json(data);
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Handle CORS
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   try {
     const { method, query, body } = req;
     const userId = query.id;
-    
+
     switch (method) {
       case 'GET':
         return await handleGetUsers(res, userId);
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     console.error('Users API error:', error);
     return errorResponse(res, 500, 'Operation failed', error.message);
   }
-}
+};
 
 async function handleGetUsers(res, userId) {
   try {
@@ -55,11 +55,11 @@ async function handleGetUsers(res, userId) {
         .select('id, name, email, role, active, created_at, trial_ends_at, last_login')
         .eq('id', userId)
         .single();
-      
+
       if (error || !user) {
         return errorResponse(res, 404, 'User not found');
       }
-      
+
       return successResponse(res, user);
     } else {
       // Get all users
@@ -83,7 +83,7 @@ async function handleGetUsers(res, userId) {
 async function handleCreateUser(res, body) {
   try {
     const { name, email, role } = body;
-    
+
     if (!name || !email) {
       return errorResponse(res, 400, 'Name and email are required');
     }
@@ -194,9 +194,9 @@ async function handleDeleteUser(res, userId) {
     // Soft delete by setting active to false
     const { data: user, error } = await supabase
       .from('users')
-      .update({ 
-        active: false, 
-        updated_at: new Date().toISOString() 
+      .update({
+        active: false,
+        updated_at: new Date().toISOString()
       })
       .eq('id', userId)
       .select('id')
@@ -206,14 +206,13 @@ async function handleDeleteUser(res, userId) {
       throw error;
     }
 
-    return successResponse(res, { 
-      success: true, 
+    return successResponse(res, {
+      success: true,
       message: 'User deactivated successfully',
-      id: user.id 
+      id: user.id
     });
   } catch (error) {
     console.error('Delete user error:', error);
     return errorResponse(res, 500, 'Failed to delete user', error.message);
   }
 }
-
