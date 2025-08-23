@@ -1,4 +1,4 @@
-# RTG System - Vercel + Supabase
+# RTG System - Vercel + Supabase 
 
 Clean, working version of the RTG Project Management System using Vercel for deployment and Supabase for the database.
 
