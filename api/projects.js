@@ -112,3 +112,90 @@ async function handleCreateProject(res, body) {
     return errorResponse(res, 500, 'Failed to create project', error.message);
   }
 }
+
+async function handleUpdateProject(res, projectId, body) {
+  try {
+    if (!projectId) {
+      return errorResponse(res, 400, 'Project ID is required');
+    }
+
+    const { name, description, status } = body;
+
+    // Check if project exists
+    const { data: existingProject } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .single();
+
+    if (!existingProject) {
+      return errorResponse(res, 404, 'Project not found');
+    }
+
+    // Build update object
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (status !== undefined) updates.status = status;
+    updates.updated_at = new Date().toISOString();
+
+    if (Object.keys(updates).length === 1) { // Only updated_at
+      return errorResponse(res, 400, 'No valid fields to update');
+    }
+
+    // Update project
+    const { data: project, error } = await supabase
+      .from('projects')
+      .update(updates)
+      .eq('id', projectId)
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return successResponse(res, project);
+  } catch (error) {
+    console.error('Update project error:', error);
+    return errorResponse(res, 500, 'Failed to update project', error.message);
+  }
+}
+
+async function handleDeleteProject(res, projectId) {
+  try {
+    if (!projectId) {
+      return errorResponse(res, 400, 'Project ID is required');
+    }
+
+    // Check if project exists
+    const { data: existingProject } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('id', projectId)
+      .single();
+
+    if (!existingProject) {
+      return errorResponse(res, 404, 'Project not found');
+    }
+
+    // Delete project (this will cascade delete related streams and deliverables)
+    const { error } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId);
+
+    if (error) {
+      throw error;
+    }
+
+    return successResponse(res, {
+      success: true,
+      message: 'Project deleted successfully',
+      id: projectId
+    });
+  } catch (error) {
+    console.error('Delete project error:', error);
+    return errorResponse(res, 500, 'Failed to delete project', error.message);
+  }
+}
