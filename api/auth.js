@@ -1,7 +1,7 @@
 // Vercel API Route for RTG Authentication with Supabase
-import { createClient } from '@supabase/supabase-js';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+const { createClient } = require('@supabase/supabase-js');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // Initialize Supabase client
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -21,7 +21,7 @@ function successResponse(res, data, statusCode = 200) {
   return res.status(statusCode).json(data);
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   // Handle CORS
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
     console.error('Auth API error:', error);
     return errorResponse(res, 500, 'Authentication failed', error.message);
   }
-}
+};
 
 async function handleSignup(res, email, password, name) {
   if (!email || !password || !name) {
@@ -242,4 +242,3 @@ async function handleHealthCheck(res) {
     return errorResponse(res, 500, 'Health check failed', error.message);
   }
 }
-
