@@ -25,9 +25,9 @@ function AuthWrapper({ children }) {
       const currentUser = await auth.getCurrentUser();
       setUser(currentUser);
       setLoading(false);
-
-      // If user exists, initialize their project
-      if (currentUser) {
+      
+      // If user exists, initialize their project (only if no project is set yet)
+      if (currentUser && !currentProject) {
         const project = await dataService.initializeUserProject(currentUser.id);
         if (project) {
           setCurrentProject(project);
@@ -55,7 +55,7 @@ function AuthWrapper({ children }) {
     );
 
     return () => subscription.unsubscribe();
-  }, [currentProject]);
+  }, []); // Empty dependency array - runs only once on mount
 
   const signIn = async (email, password) => {
     const { data, error } = await auth.signIn(email, password);
@@ -77,6 +77,7 @@ function AuthWrapper({ children }) {
   const authValue = {
     user,
     currentProject,
+    setCurrentProject, // Add this to allow project switching from dropdown
     signIn,
     signUp,
     signOut,
