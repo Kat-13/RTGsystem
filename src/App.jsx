@@ -11,70 +11,73 @@ import './App.css';
 
 function App() {
   const [currentLevel, setCurrentLevel] = useState('program-board');
+  const [currentProject, setCurrentProject] = useState(null); // <-- ADD THIS LINE
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     initializeDataIfEmpty();
-
-    // Example: Create a default project for the logged-in user
-    async function createDefaultProject() {
-      setLoading(true);
-      setErrorMsg('');
-      try {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
-        if (userError || !userData?.user) {
-          setErrorMsg('No authenticated user or error: ' + (userError?.message || 'Unknown error'));
-          console.error('No authenticated user or error:', userError);
-          setLoading(false);
-          return;
-        }
-        const userId = userData.user.id;
-
-        const { data: newProject, error: createError } = await database.createProject(
-          'Default Project',
-          'Your main project workspace',
-          userId
-        );
-        if (createError) {
-          setErrorMsg('Error creating project: ' + createError.message);
-          console.error('Error creating project:', createError);
-        } else {
-          console.log('Created default project:', newProject);
-        }
-      } catch (err) {
-        setErrorMsg('Unexpected error: ' + err.message);
-        console.error('Unexpected error:', err);
-      }
-      setLoading(false);
-    }
-
-    // Uncomment to run on every load:
-    // createDefaultProject();
   }, []);
+
+  // Example: Create a default project for the logged-in user
+  async function createDefaultProject() {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        setErrorMsg('No authenticated user or error: ' + (userError?.message || 'Unknown error'));
+        console.error('No authenticated user or error:', userError);
+        setLoading(false);
+        return;
+      }
+      const userId = userData.user.id;
+
+      const { data: newProject, error: createError } = await database.createProject(
+        'Default Project',
+        'Your main project workspace',
+        userId
+      );
+      if (createError) {
+        setErrorMsg('Error creating project: ' + createError.message);
+        console.error('Error creating project:', createError);
+      } else {
+        console.log('Created default project:', newProject);
+      }
+    } catch (err) {
+      setErrorMsg('Unexpected error: ' + err.message);
+      console.error('Unexpected error:', err);
+    }
+    setLoading(false);
+  }
+
+  // Uncomment to run on every load:
+  // createDefaultProject();
 
   const renderCurrentLevel = () => {
     switch (currentLevel) {
       case 'whiteboard':
-        return <WhiteboardLevel />;
+        return <WhiteboardLevel currentProject={currentProject} />;
       case 'program-board':
-        return <ProgramBoardLevel />;
+        return <ProgramBoardLevel currentProject={currentProject} />;
       case 'tracks':
-        return <TracksLevel />;
+        return <TracksLevel currentProject={currentProject} />;
       case 'schedule':
-        return <ScheduleLevel />;
+        return <ScheduleLevel currentProject={currentProject} />;
       case 'program-view':
-        return <ProgramView />;
+        return <ProgramView currentProject={currentProject} />;
       default:
-        return <ProgramBoardLevel />;
+        return <ProgramBoardLevel currentProject={currentProject} />;
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <RTGNavigation 
-        currentLevel={currentLevel} 
+      <RTGNavigation
+        currentLevel={currentLevel}
         onLevelChange={setCurrentLevel}
+        currentProject={currentProject}
+        onProjectChange={setCurrentProject}
       />
       <main>
         {loading && (
