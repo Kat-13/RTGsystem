@@ -1,4 +1,4 @@
-// Project Management System for RTG AE 
+// Project Management System for RTG AE
 /*
  * projectManager.js - Multi-Project Data Management
  * VERSION: v2.1.3 - 2025-08-21 09:45:00
