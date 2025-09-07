@@ -37,11 +37,12 @@ const RTGNavigation = ({ currentLevel, onLevelChange }) => {
       const list = data || [];
       setProjects(list);
 
-      // If nothing selected yet, default to first project (if any)
+      // FIX: Add proper array checking before accessing list[0]
       setCurrentProject((prev) => {
-        if (!prev) return list[0] ?? null;
-        const stillExists = list.find((p) => p.id === prev.id);
-        return stillExists ? prev : (list[0] ?? null);
+        const safeList = Array.isArray(list) ? list : [];
+        if (!prev) return safeList.length > 0 ? safeList[0] : null;
+        const stillExists = safeList.find((p) => p.id === prev.id);
+        return stillExists ? prev : (safeList.length > 0 ? safeList[0] : null);
       });
     } finally {
       setLoadingProjects(false);
