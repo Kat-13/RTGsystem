@@ -1,16 +1,16 @@
 /*
  * ProgramBoardLevel.jsx - L1 Program Board Component 
- * VERSION: v2.1.4 - Migrated to Supabase
- * ENHANCEMENTS: Uses Supabase backend while maintaining exact same functionality
- * LAST MODIFIED: 2025-01-XX XX:XX:XX
+ * VERSION: v2.1.3 - 2025-08-21 09:45:00
+ * ENHANCEMENTS: Fixed StreamColumn errors, user assignment functionality, function name references
+ * LAST MODIFIED: 2025-08-21 09:45:00
  */
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, MoreVertical, Edit3, Trash2, X, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { FunctionalDeliverable, ChecklistItem, Stream, RTG_STREAM_COLORS } from '../data/rtgAEDataModel';
-import { SupabaseProjectStorage } from '../data/supabaseService';
+import { ProjectAwareDataStorage } from '../data/projectManager';
 import ExportButton from './ExportButton';
 
-const ProgramBoardLevel = ({ currentProject }) => {
+const ProgramBoardLevel = () => {
   const [deliverables, setDeliverables] = useState([]);
   const [streams, setStreams] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,39 +32,24 @@ const ProgramBoardLevel = ({ currentProject }) => {
     explanation: ''
   });
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (currentProject) {
-      SupabaseProjectStorage.setCurrentProject(currentProject.id);
-      loadData();
-    }
-  }, [currentProject]);
+    loadData();
+  }, []);
 
-  const loadData = async () => {
-    if (!currentProject) return;
+  const loadData = () => {
+    const loadedDeliverables = ProjectAwareDataStorage.load('functional_deliverables', []);
+    const loadedStreams = ProjectAwareDataStorage.load('streams', getDefaultStreams());
+    const loadedNotes = ProjectAwareDataStorage.load('whiteboard_notes', []);
+    const loadedUsers = ProjectAwareDataStorage.loadUsers();
     
-    setLoading(true);
-    try {
-      const [loadedDeliverables, loadedStreams, loadedNotes, loadedUsers] = await Promise.all([
-        SupabaseProjectStorage.load('functional_deliverables', []),
-        SupabaseProjectStorage.load('streams', getDefaultStreams()),
-        SupabaseProjectStorage.load('whiteboard_notes', []),
-        SupabaseProjectStorage.loadUsers()
-      ]);
-      
-      setDeliverables(loadedDeliverables);
-      setStreams(loadedStreams);
-      setUsers(loadedUsers);
-      
-      // Filter unpromoted L0 notes
-      const unpromoted = loadedNotes.filter(note => !note.promoted_to_l1);
-      setL0Notes(unpromoted);
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
-    }
+    setDeliverables(loadedDeliverables);
+    setStreams(loadedStreams);
+    setUsers(loadedUsers);
+    
+    // Filter unpromoted L0 notes
+    const unpromoted = loadedNotes.filter(note => !note.promoted_to_l1);
+    setL0Notes(unpromoted);
   };
 
   const getDefaultStreams = () => [];
@@ -100,59 +85,55 @@ const ProgramBoardLevel = ({ currentProject }) => {
 
   const unassignedDeliverables = filteredDeliverables.filter(d => !d.stream_id);
 
-  const handleCreateDeliverable = async (deliverableData) => {
-    try {
-      if (editingDeliverable) {
-        // Update existing deliverable
-        const updatedDeliverables = deliverables.map(d => 
-          d.id === editingDeliverable.id 
-            ? {
-                ...d,
-                title: deliverableData.title,
-                description: deliverableData.description,
-                stream_id: deliverableData.stream_id,
-                readiness: deliverableData.readiness,
-                target_date: deliverableData.target_date,
-                // Set original_date if it's null and target_date is being set
-                original_date: d.original_date || (deliverableData.target_date ? deliverableData.target_date : null),
-                owner_name: deliverableData.owner_name,
-                owner_email: deliverableData.owner_email,
-                checklist: deliverableData.checklist || [],
-                comments: deliverableData.comments || [],
-                dependencies: deliverableData.dependencies || []
-              }
-            : d
-        );
-        setDeliverables(updatedDeliverables);
-        await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-      } else {
-        // Create new deliverable
-        const newDeliverable = new FunctionalDeliverable(
-          SupabaseProjectStorage.generateId(),
-          deliverableData.title,
-          deliverableData.description,
-          deliverableData.stream_id,
-          deliverableData.readiness,
-          deliverableData.target_date
-        );
-        
-        // Add additional fields
-        newDeliverable.owner_name = deliverableData.owner_name;
-        newDeliverable.owner_email = deliverableData.owner_email;
-        newDeliverable.checklist = deliverableData.checklist || [];
-        newDeliverable.comments = deliverableData.comments || [];
-        newDeliverable.dependencies = deliverableData.dependencies || [];
-        
-        const updatedDeliverables = [...deliverables, newDeliverable];
-        setDeliverables(updatedDeliverables);
-        await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-      }
+  const handleCreateDeliverable = (deliverableData) => {
+    if (editingDeliverable) {
+      // Update existing deliverable
+      const updatedDeliverables = deliverables.map(d => 
+        d.id === editingDeliverable.id 
+          ? {
+              ...d,
+              title: deliverableData.title,
+              description: deliverableData.description,
+              stream_id: deliverableData.stream_id,
+              readiness: deliverableData.readiness,
+              target_date: deliverableData.target_date,
+              // Set original_date if it's null and target_date is being set
+              original_date: d.original_date || (deliverableData.target_date ? deliverableData.target_date : null),
+              owner_name: deliverableData.owner_name,
+            owner_email: deliverableData.owner_email,
+            checklist: deliverableData.checklist || [],
+            comments: deliverableData.comments || [],
+            dependencies: deliverableData.dependencies || []
+            }
+          : d
+      );
+      setDeliverables(updatedDeliverables);
+      ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
+    } else {
+      // Create new deliverable
+      const newDeliverable = new FunctionalDeliverable(
+        ProjectAwareDataStorage.generateId(),
+        deliverableData.title,
+        deliverableData.description,
+        deliverableData.stream_id,
+        deliverableData.readiness,
+        deliverableData.target_date
+      );
       
-      setShowDeliverableModal(false);
-      setEditingDeliverable(null);
-    } catch (error) {
-      console.error('Error saving deliverable:', error);
+      // Add additional fields
+      newDeliverable.owner_name = deliverableData.owner_name;
+      newDeliverable.owner_email = deliverableData.owner_email;
+      newDeliverable.checklist = deliverableData.checklist || [];
+      newDeliverable.comments = deliverableData.comments || [];
+      newDeliverable.dependencies = deliverableData.dependencies || [];
+      
+      const updatedDeliverables = [...deliverables, newDeliverable];
+      setDeliverables(updatedDeliverables);
+      ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
     }
+    
+    setShowDeliverableModal(false);
+    setEditingDeliverable(null);
   };
 
   const handleRequestRecommit = (recommitInfo) => {
@@ -160,58 +141,54 @@ const ProgramBoardLevel = ({ currentProject }) => {
     setShowRecommitModal(true);
   };
 
-  const handleConfirmRecommit = async (updatedRecommitData) => {
+  const handleConfirmRecommit = (updatedRecommitData) => {
     if (updatedRecommitData.deliverable && updatedRecommitData.reason) {
-      try {
-        // Update the deliverable with the new date and add to audit trail
-        const updatedDeliverables = deliverables.map(d => {
-          if (d.id === updatedRecommitData.deliverable.id) {
-            // Add date change to audit trail
-            const dateChange = {
-              old_date: updatedRecommitData.oldDate,
-              new_date: updatedRecommitData.newDate,
-              reason: updatedRecommitData.reason,
-              explanation: updatedRecommitData.explanation,
-              timestamp: new Date().toISOString(),
-              user: 'Current User' // This would come from auth
-            };
+      // Update the deliverable with the new date and add to audit trail
+      const updatedDeliverables = deliverables.map(d => {
+        if (d.id === updatedRecommitData.deliverable.id) {
+          // Add date change to audit trail
+          const dateChange = {
+            old_date: updatedRecommitData.oldDate,
+            new_date: updatedRecommitData.newDate,
+            reason: updatedRecommitData.reason,
+            explanation: updatedRecommitData.explanation,
+            timestamp: new Date().toISOString(),
+            user: 'Current User' // This would come from auth
+          };
 
-            // Initialize audit trail fields if they don't exist
-            if (!d.original_date) {
-              d.original_date = updatedRecommitData.oldDate;
-            }
-            if (!d.date_history) {
-              d.date_history = [];
-            }
-            if (!d.recommit_reasons) {
-              d.recommit_reasons = [];
-            }
-
-            // Add to audit trail
-            d.date_history.push(dateChange);
-            d.recommit_reasons.push(updatedRecommitData.reason);
-            d.recommit_count = (d.recommit_count || 0) + 1;
-
-            // Update the target date
-            d.target_date = updatedRecommitData.newDate;
-
-            // Recalculate planning accuracy score
-            d.planning_accuracy_score = Math.max(0, 100 - (d.recommit_count * 10));
-
-            return d;
+          // Initialize audit trail fields if they don't exist
+          if (!d.original_date) {
+            d.original_date = updatedRecommitData.oldDate;
           }
-          return d;
-        });
+          if (!d.date_history) {
+            d.date_history = [];
+          }
+          if (!d.recommit_reasons) {
+            d.recommit_reasons = [];
+          }
 
-        setDeliverables(updatedDeliverables);
-        await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-        
-        // Close the deliverable modal since the date change is complete
-        setShowDeliverableModal(false);
-        setEditingDeliverable(null);
-      } catch (error) {
-        console.error('Error updating deliverable:', error);
-      }
+          // Add to audit trail
+          d.date_history.push(dateChange);
+          d.recommit_reasons.push(updatedRecommitData.reason);
+          d.recommit_count = (d.recommit_count || 0) + 1;
+
+          // Update the target date
+          d.target_date = updatedRecommitData.newDate;
+
+          // Recalculate planning accuracy score
+          d.planning_accuracy_score = Math.max(0, 100 - (d.recommit_count * 10));
+
+          return d;
+        }
+        return d;
+      });
+
+      setDeliverables(updatedDeliverables);
+      ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
+      
+      // Close the deliverable modal since the date change is complete
+      setShowDeliverableModal(false);
+      setEditingDeliverable(null);
     }
 
     setShowRecommitModal(false);
@@ -224,169 +201,137 @@ const ProgramBoardLevel = ({ currentProject }) => {
     });
   };
 
-  const handleCreateStream = async (streamData) => {
-    try {
-      console.log('handleCreateStream called with:', streamData);
-      const newStream = new Stream(
-        SupabaseProjectStorage.generateId(),
-        streamData.name,
-        streamData.color,
-        streamData.description
-      );
-      
-      console.log('Created new Stream object:', newStream);
-      
-      const updatedStreams = [...streams, newStream];
-      setStreams(updatedStreams);
-      await SupabaseProjectStorage.save('streams', updatedStreams);
-      console.log('Updated streams:', updatedStreams);
-      setShowStreamModal(false);
-    } catch (error) {
-      console.error('Error creating stream:', error);
-    }
+  const handleCreateStream = (streamData) => {
+    console.log('handleCreateStream called with:', streamData);
+    const newStream = new Stream(
+      ProjectAwareDataStorage.generateId(),
+      streamData.name,
+      streamData.color,
+      streamData.description
+    );
+    
+    console.log('Created new Stream object:', newStream);
+    
+    const updatedStreams = [...streams, newStream];
+    setStreams(updatedStreams);
+    ProjectAwareDataStorage.save('streams', updatedStreams);
+    console.log('Updated streams:', updatedStreams);
+    setShowStreamModal(false);
   };
 
-  const handleEditStream = async (streamId, newName) => {
-    try {
-      const updatedStreams = streams.map(stream =>
-        stream.id === streamId ? { ...stream, name: newName } : stream
-      );
-      setStreams(updatedStreams);
-      await SupabaseProjectStorage.save('streams', updatedStreams);
-    } catch (error) {
-      console.error('Error updating stream:', error);
-    }
+  const handleEditStream = (streamId, newName) => {
+    const updatedStreams = streams.map(stream =>
+      stream.id === streamId ? { ...stream, name: newName } : stream
+    );
+    setStreams(updatedStreams);
+    ProjectAwareDataStorage.save('streams', updatedStreams);
   };
 
-  const handleDropDeliverable = async (deliverableId, targetStreamId, insertIndex = null) => {
+  const handleDropDeliverable = (deliverableId, targetStreamId, insertIndex = null) => {
     const deliverable = deliverables.find(d => d.id === deliverableId);
     if (!deliverable) return;
 
     const sourceStreamId = deliverable.stream_id;
     
-    try {
-      if (sourceStreamId === targetStreamId && insertIndex !== null) {
-        // Reordering within the same stream
-        const streamDeliverables = deliverables.filter(d => d.stream_id === targetStreamId);
-        const otherDeliverables = deliverables.filter(d => d.stream_id !== targetStreamId);
-        
-        // Remove the dragged deliverable from its current position
-        const filteredStreamDeliverables = streamDeliverables.filter(d => d.id !== deliverableId);
-        
-        // Insert at the new position
-        filteredStreamDeliverables.splice(insertIndex, 0, deliverable);
-        
-        // Update the order property for all deliverables in this stream
-        const reorderedStreamDeliverables = filteredStreamDeliverables.map((d, index) => ({
-          ...d,
-          order: index
-        }));
-        
-        const updatedDeliverables = [...otherDeliverables, ...reorderedStreamDeliverables];
-        setDeliverables(updatedDeliverables);
-        await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-      } else {
-        // Moving between streams (existing functionality)
-        const updatedDeliverables = deliverables.map(deliverable =>
-          deliverable.id === deliverableId
-            ? { ...deliverable, stream_id: targetStreamId }
-            : deliverable
-        );
-        setDeliverables(updatedDeliverables);
-        await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-      }
-    } catch (error) {
-      console.error('Error moving deliverable:', error);
+    if (sourceStreamId === targetStreamId && insertIndex !== null) {
+      // Reordering within the same stream
+      const streamDeliverables = deliverables.filter(d => d.stream_id === targetStreamId);
+      const otherDeliverables = deliverables.filter(d => d.stream_id !== targetStreamId);
+      
+      // Remove the dragged deliverable from its current position
+      const filteredStreamDeliverables = streamDeliverables.filter(d => d.id !== deliverableId);
+      
+      // Insert at the new position
+      filteredStreamDeliverables.splice(insertIndex, 0, deliverable);
+      
+      // Update the order property for all deliverables in this stream
+      const reorderedStreamDeliverables = filteredStreamDeliverables.map((d, index) => ({
+        ...d,
+        order: index
+      }));
+      
+      const updatedDeliverables = [...otherDeliverables, ...reorderedStreamDeliverables];
+      setDeliverables(updatedDeliverables);
+      ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
+    } else {
+      // Moving between streams (existing functionality)
+      const updatedDeliverables = deliverables.map(deliverable =>
+        deliverable.id === deliverableId
+          ? { ...deliverable, stream_id: targetStreamId }
+          : deliverable
+      );
+      setDeliverables(updatedDeliverables);
+      ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
     }
   };
 
-  const handleReorderStreams = async (draggedStreamId, targetStreamId) => {
+  const handleReorderStreams = (draggedStreamId, targetStreamId) => {
     const draggedIndex = streams.findIndex(s => s.id === draggedStreamId);
     const targetIndex = streams.findIndex(s => s.id === targetStreamId);
     
     if (draggedIndex === -1 || targetIndex === -1) return;
     
-    try {
-      const newStreams = [...streams];
-      const [draggedStream] = newStreams.splice(draggedIndex, 1);
-      newStreams.splice(targetIndex, 0, draggedStream);
-      
-      setStreams(newStreams);
-      await SupabaseProjectStorage.save('streams', newStreams);
-    } catch (error) {
-      console.error('Error reordering streams:', error);
-    }
+    const newStreams = [...streams];
+    const [draggedStream] = newStreams.splice(draggedIndex, 1);
+    newStreams.splice(targetIndex, 0, draggedStream);
+    
+    setStreams(newStreams);
+    ProjectAwareDataStorage.save('streams', newStreams);
   };
 
-  const handleToggleChecklistItem = async (deliverableId, itemId) => {
-    try {
-      const updatedDeliverables = deliverables.map(deliverable => {
-        if (deliverable.id === deliverableId) {
-          const updatedChecklist = deliverable.checklist.map(item => {
-            if (item.id === itemId) {
-              return {
-                ...item,
-                done: !item.done,
-                done_at: !item.done ? new Date().toISOString() : null
-              };
-            }
-            return item;
-          });
-          return { ...deliverable, checklist: updatedChecklist };
-        }
-        return deliverable;
-      });
-      
-      setDeliverables(updatedDeliverables);
-      await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-    } catch (error) {
-      console.error('Error toggling checklist item:', error);
-    }
+  const handleToggleChecklistItem = (deliverableId, itemId) => {
+    const updatedDeliverables = deliverables.map(deliverable => {
+      if (deliverable.id === deliverableId) {
+        const updatedChecklist = deliverable.checklist.map(item => {
+          if (item.id === itemId) {
+            return {
+              ...item,
+              done: !item.done,
+              done_at: !item.done ? new Date().toISOString() : null
+            };
+          }
+          return item;
+        });
+        return { ...deliverable, checklist: updatedChecklist };
+      }
+      return deliverable;
+    });
+    
+    setDeliverables(updatedDeliverables);
+    ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
   };
 
-  const handleDeleteDeliverable = async (deliverableId) => {
-    try {
-      const updatedDeliverables = deliverables.filter(deliverable => deliverable.id !== deliverableId);
-      setDeliverables(updatedDeliverables);
-      await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-    } catch (error) {
-      console.error('Error deleting deliverable:', error);
-    }
+  const handleDeleteDeliverable = (deliverableId) => {
+    const updatedDeliverables = deliverables.filter(deliverable => deliverable.id !== deliverableId);
+    setDeliverables(updatedDeliverables);
+    ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
   };
 
-  const handleUpdateDeliverableReadiness = async (deliverableId, newReadiness) => {
-    try {
-      const updatedDeliverables = deliverables.map(deliverable =>
-        deliverable.id === deliverableId
-          ? { ...deliverable, readiness: newReadiness }
-          : deliverable
-      );
-      setDeliverables(updatedDeliverables);
-      await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-    } catch (error) {
-      console.error('Error updating deliverable readiness:', error);
-    }
+  const handleUpdateDeliverableReadiness = (deliverableId, newReadiness) => {
+    const updatedDeliverables = deliverables.map(deliverable =>
+      deliverable.id === deliverableId
+        ? { ...deliverable, readiness: newReadiness }
+        : deliverable
+    );
+    setDeliverables(updatedDeliverables);
+    ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
   };
 
-  const handleDeleteStream = async (streamId) => {
-    try {
-      console.log('handleDeleteStream called with streamId:', streamId);
-      console.log('Current streams:', streams);
-      
-      // Remove the stream
-      const updatedStreams = streams.filter(stream => stream.id !== streamId);
-      console.log('Updated streams after filter:', updatedStreams);
-      
-      setStreams(updatedStreams);
-      await SupabaseProjectStorage.save('streams', updatedStreams);
-      
-      // Also remove any deliverables associated with this stream
-      const updatedDeliverables = deliverables.filter(deliverable => deliverable.stream_id !== streamId);
-      setDeliverables(updatedDeliverables);
-      await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-    } catch (error) {
-      console.error('Error deleting stream:', error);
-    }
+  const handleDeleteStream = (streamId) => {
+    console.log('handleDeleteStream called with streamId:', streamId);
+    console.log('Current streams:', streams);
+    
+    // Remove the stream
+    const updatedStreams = streams.filter(stream => stream.id !== streamId);
+    console.log('Updated streams after filter:', updatedStreams);
+    
+    setStreams(updatedStreams);
+    ProjectAwareDataStorage.save('streams', updatedStreams);
+    
+    // Also remove any deliverables associated with this stream
+    const updatedDeliverables = deliverables.filter(deliverable => deliverable.stream_id !== streamId);
+    setDeliverables(updatedDeliverables);
+    ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
   };
 
   const handleCompleteStream = (stream) => {
@@ -394,19 +339,15 @@ const ProgramBoardLevel = ({ currentProject }) => {
     setShowStreamCompletionModal(true);
   };
 
-  const handleConfirmStreamCompletion = async (status) => {
+  const handleConfirmStreamCompletion = (status) => {
     if (streamToComplete) {
-      try {
-        const updatedStreams = streams.map(stream => 
-          stream.id === streamToComplete.id 
-            ? { ...stream, status: status }
-            : stream
-        );
-        setStreams(updatedStreams);
-        await SupabaseProjectStorage.save('streams', updatedStreams);
-      } catch (error) {
-        console.error('Error completing stream:', error);
-      }
+      const updatedStreams = streams.map(stream => 
+        stream.id === streamToComplete.id 
+          ? { ...stream, status: status }
+          : stream
+      );
+      setStreams(updatedStreams);
+      ProjectAwareDataStorage.save('streams', updatedStreams);
     }
     setShowStreamCompletionModal(false);
     setStreamToComplete(null);
@@ -418,74 +359,48 @@ const ProgramBoardLevel = ({ currentProject }) => {
     setShowDeliverableModal(true);
   };
 
-  const handlePromoteFromL0 = async (selectedNoteIds) => {
-    try {
-      const allNotes = await SupabaseProjectStorage.load('whiteboard_notes', []);
-      const selectedNotes = allNotes.filter(note => selectedNoteIds.includes(note.id));
-      
-      const newDeliverables = selectedNotes.map(note => {
-        const deliverable = new FunctionalDeliverable(
-          SupabaseProjectStorage.generateId(),
-          note.title,
-          note.description,
-          note.stream,
-          'planning'
-        );
-        deliverable.promoted_from_l0 = note.id;
-        return deliverable;
-      });
-      
-      // Mark notes as promoted
-      const updatedNotes = allNotes.map(note => {
-        if (selectedNoteIds.includes(note.id)) {
-          return {
-            ...note,
-            promoted_to_l1: true,
-            promoted_at: new Date().toISOString()
-          };
-        }
-        return note;
-      });
-      
-      const updatedDeliverables = [...deliverables, ...newDeliverables];
-      setDeliverables(updatedDeliverables);
-      await SupabaseProjectStorage.save('functional_deliverables', updatedDeliverables);
-      await SupabaseProjectStorage.save('whiteboard_notes', updatedNotes);
-      
-      // Ensure users are loaded after promotion to prevent undefined errors
-      const currentUsers = await SupabaseProjectStorage.loadUsers();
-      setUsers(currentUsers || []);
-      
-      // Refresh L0 notes
-      const unpromoted = updatedNotes.filter(note => !note.promoted_to_l1);
-      setL0Notes(unpromoted);
-      setShowPromoteModal(false);
-    } catch (error) {
-      console.error('Error promoting from L0:', error);
-    }
+  const handlePromoteFromL0 = (selectedNoteIds) => {
+    const allNotes = ProjectAwareDataStorage.load('whiteboard_notes', []);
+    const selectedNotes = allNotes.filter(note => selectedNoteIds.includes(note.id));
+    
+    const newDeliverables = selectedNotes.map(note => {
+      const deliverable = new FunctionalDeliverable(
+        ProjectAwareDataStorage.generateId(),
+        note.title,
+        note.description,
+        note.stream,
+        'planning'
+      );
+      deliverable.promoted_from_l0 = note.id;
+      return deliverable;
+    });
+    
+    // Mark notes as promoted
+    const updatedNotes = allNotes.map(note => {
+      if (selectedNoteIds.includes(note.id)) {
+        return {
+          ...note,
+          promoted_to_l1: true,
+          promoted_at: new Date().toISOString()
+        };
+      }
+      return note;
+    });
+    
+    const updatedDeliverables = [...deliverables, ...newDeliverables];
+    setDeliverables(updatedDeliverables);
+    ProjectAwareDataStorage.save('functional_deliverables', updatedDeliverables);
+    ProjectAwareDataStorage.save('whiteboard_notes', updatedNotes);
+    
+    // Ensure users are loaded after promotion to prevent undefined errors
+    const currentUsers = ProjectAwareDataStorage.loadUsers();
+    setUsers(currentUsers || []);
+    
+    // Refresh L0 notes
+    const unpromoted = updatedNotes.filter(note => !note.promoted_to_l1);
+    setL0Notes(unpromoted);
+    setShowPromoteModal(false);
   };
-
-  if (!currentProject) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Project Selected</h3>
-          <p className="text-gray-600">Please select or create a project to view the program board.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading program board...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -516,66 +431,34 @@ const ProgramBoardLevel = ({ currentProject }) => {
             <span>Add Stream</span>
           </button>
           <button
-            onClick={() => {
-              setSelectedStreamForDeliverable(null);
-              setShowDeliverableModal(true);
-            }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            onClick={() => setShowDeliverableModal(true)}
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center space-x-2"
           >
             <Plus className="h-4 w-4" />
             <span>Add Deliverable</span>
           </button>
-          <ExportButton />
+          <ExportButton 
+            streams={streams} 
+            deliverables={deliverables}
+            className="ml-2"
+          />
         </div>
       </div>
 
-      {/* Search and Filter Controls */}
-      <div className="flex items-center space-x-4 mb-6">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <input
-            type="text"
-            placeholder="Search deliverables..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <select
           value={selectedStream}
           onChange={(e) => setSelectedStream(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         >
           <option value="all">All Streams</option>
-          {streams.map(stream => (
+          {streams.filter(stream => stream.status !== 'complete' && stream.status !== 'archive').map(stream => (
             <option key={stream.id} value={stream.id}>{stream.name}</option>
           ))}
         </select>
       </div>
 
-      {/* Streams Board */}
-      <div className="flex space-x-6 overflow-x-auto pb-4">
-        {/* Unassigned Deliverables Column */}
-        {unassignedDeliverables.length > 0 && (
-          <div className="bg-gray-100 rounded-lg p-4 w-80 flex-shrink-0">
-            <h3 className="font-medium text-gray-900 mb-4">Unassigned ({unassignedDeliverables.length})</h3>
-            <div className="space-y-3">
-              {unassignedDeliverables.map(deliverable => (
-                <DeliverableCard
-                  key={deliverable.id}
-                  deliverable={deliverable}
-                  onToggleChecklistItem={handleToggleChecklistItem}
-                  onEdit={handleEditDeliverable}
-                  onDelete={handleDeleteDeliverable}
-                  onUpdateReadiness={handleUpdateDeliverableReadiness}
-                  users={users}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Stream Columns */}
+      <div className="flex gap-6 overflow-x-auto pb-4">
         {streamData.map(stream => (
           <StreamColumn
             key={stream.id}
@@ -585,20 +468,36 @@ const ProgramBoardLevel = ({ currentProject }) => {
             onReorderStreams={handleReorderStreams}
             onToggleChecklistItem={handleToggleChecklistItem}
             onEditDeliverable={handleEditDeliverable}
-            onAddDeliverable={(streamId) => {
-              setSelectedStreamForDeliverable(streamId);
-              setShowDeliverableModal(true);
-            }}
             onDeleteDeliverable={handleDeleteDeliverable}
             onUpdateDeliverableReadiness={handleUpdateDeliverableReadiness}
             onDeleteStream={handleDeleteStream}
             onCompleteStream={handleCompleteStream}
             users={users}
+            onAddDeliverable={(streamId) => {
+              setSelectedStreamForDeliverable(streamId);
+              setShowDeliverableModal(true);
+            }}
           />
         ))}
+        
+        {unassignedDeliverables.length > 0 && (
+          <StreamColumn
+            stream={{
+              id: null,
+              name: 'Unassigned',
+              color: '#6B7280',
+              deliverables: unassignedDeliverables
+            }}
+            onDropDeliverable={handleDropDeliverable}
+            onToggleChecklistItem={handleToggleChecklistItem}
+            onEditDeliverable={handleEditDeliverable}
+            onDeleteDeliverable={handleDeleteDeliverable}
+            onUpdateDeliverableReadiness={handleUpdateDeliverableReadiness}
+            users={users}
+          />
+        )}
       </div>
 
-      {/* Modals */}
       {showDeliverableModal && (
         <DeliverableModal
           streams={streams}
@@ -655,8 +554,6 @@ const ProgramBoardLevel = ({ currentProject }) => {
   );
 };
 
-
-// StreamColumn Component - Complete from original
 const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStreams, onToggleChecklistItem, onEditDeliverable, onAddDeliverable, onDeleteDeliverable, onUpdateDeliverableReadiness, onDeleteStream, onCompleteStream, users }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -740,14 +637,14 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
   };
 
   const getCollapsedHeight = () => {
-    const baseHeight = 120;
+    const baseHeight = 120; // Base height for name, color, count
     const statusIndicators = [
       stream.deliverables?.filter(d => d.readiness === 'blocked').length > 0,
       stream.deliverables?.filter(d => d.readiness === 'executing').length > 0,
       stream.deliverables?.filter(d => d.readiness === 'complete').length > 0
     ].filter(Boolean).length;
     
-    const indicatorHeight = statusIndicators * 12;
+    const indicatorHeight = statusIndicators * 12; // 12px per indicator
     const expandButtonHeight = 40;
     
     return Math.max(200, baseHeight + indicatorHeight + expandButtonHeight);
@@ -779,7 +676,9 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
       }}
     >
       {isCollapsed ? (
+        /* Collapsed Vertical View */
         <div className="flex flex-col items-center h-full">
+          {/* Vertical Stream Name - Moved to Top */}
           <div className="pt-2 pb-4">
             <div 
               className="writing-mode-vertical text-sm font-medium text-gray-900 transform rotate-180"
@@ -790,15 +689,18 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
             </div>
           </div>
           
+          {/* Stream Color Indicator */}
           <div
             className="w-3 h-3 rounded-full mb-2"
             style={{ backgroundColor: stream.color }}
           />
           
+          {/* Deliverable Count */}
           <div className="text-xs text-gray-500 mb-2">
             {stream.deliverables?.length || 0}
           </div>
           
+          {/* Quick Status Indicators */}
           <div className="flex flex-col space-y-1 mb-4">
             {stream.deliverables?.filter(d => d.readiness === 'blocked').length > 0 && (
               <div className="w-2 h-2 bg-red-500 rounded-full" title="Blocked items" />
@@ -811,6 +713,7 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
             )}
           </div>
           
+          {/* Expand Button - Moved to Bottom */}
           <div className="mt-auto mb-2">
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
@@ -824,6 +727,7 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
           </div>
         </div>
       ) : (
+        /* Expanded Horizontal View */
         <>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2 flex-1">
@@ -925,9 +829,12 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
             </div>
           </div>
 
+          {/* Stream Content - Expanded View */}
+          {/* Active Deliverables */}
           <div className="space-y-3 overflow-y-auto flex-1" style={{ maxHeight: '400px' }}>
             {stream.deliverables?.filter(deliverable => deliverable.readiness !== 'complete').map((deliverable, index) => (
               <div key={deliverable.id}>
+                {/* Enhanced drop zone above each card */}
                 <div
                   className={`h-3 mx-2 transition-all duration-200 rounded-md ${
                     dragOverIndex === index 
@@ -951,6 +858,7 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
                   onUpdateReadiness={onUpdateDeliverableReadiness}
                   users={users}
                 />
+                {/* Enhanced drop zone after the last card */}
                 {index === stream.deliverables.filter(d => d.readiness !== 'complete').length - 1 && (
                   <div
                     className={`h-3 mx-2 mt-2 transition-all duration-200 rounded-md ${
@@ -981,6 +889,7 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
             )}
           </div>
 
+          {/* Completed Deliverables Section */}
           {stream.deliverables?.filter(deliverable => deliverable.readiness === 'complete').length > 0 && (
             <div className="mt-6 pt-4 border-t border-gray-300">
               <h4 className="text-sm font-medium text-gray-600 mb-3 flex items-center">
@@ -1008,110 +917,113 @@ const StreamColumn = ({ stream, onEditStream, onDropDeliverable, onReorderStream
   );
 };
 
-// DeliverableCard Component - Complete from original
-const DeliverableCard = ({ deliverable, onToggleChecklistItem, onEdit, onDelete, onUpdateReadiness, users }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+const DeliverableCard = ({ deliverable, onToggleChecklistItem, onEdit, onDelete, onUpdateReadiness, users = [] }) => {
   const [showMenu, setShowMenu] = useState(false);
-
+  const [isExpanded, setIsExpanded] = useState(true);
+  
+  // Get assigned user details
+  const assignedUser = users.find(user => user.id === deliverable.assigned_user);
   const handleDragStart = (e) => {
     e.dataTransfer.setData('text/plain', deliverable.id);
-    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.5';
   };
 
-  const getReadinessColor = (readiness) => {
-    const colors = {
-      planning: 'bg-gray-100 text-gray-800 border-gray-300',
-      alignment: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-      ready: 'bg-green-100 text-green-800 border-green-300',
-      executing: 'bg-blue-100 text-blue-800 border-blue-300',
-      blocked: 'bg-red-100 text-red-800 border-red-300',
-      review: 'bg-purple-100 text-purple-800 border-purple-300',
-      complete: 'bg-emerald-100 text-emerald-800 border-emerald-300'
-    };
-    return colors[readiness] || colors.planning;
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = '1';
   };
 
-  const assignedUser = users?.find(user => user.id === deliverable.assigned_user);
+  const readinessColors = {
+    planning: 'bg-yellow-100 text-yellow-800',
+    alignment: 'bg-purple-100 text-purple-800',
+    ready: 'bg-green-100 text-green-800',
+    executing: 'bg-blue-100 text-blue-800',
+    blocked: 'bg-red-100 text-red-800',
+    review: 'bg-orange-100 text-orange-800',
+    complete: 'bg-gray-100 text-gray-800'
+  };
+
   const completedItems = deliverable.checklist?.filter(item => item.done).length || 0;
   const totalItems = deliverable.checklist?.length || 0;
 
   return (
     <div
-      className="bg-white rounded-lg p-4 border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
       draggable
       onDragStart={handleDragStart}
-      onClick={() => setIsExpanded(!isExpanded)}
+      onDragEnd={handleDragEnd}
+      onClick={() => onEdit && onEdit(deliverable)}
+      className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
     >
       <div className="flex items-start justify-between mb-2">
-        <div className="flex-1">
-          <h4 className="font-medium text-gray-900 mb-1">{deliverable.title}</h4>
-          <div className="flex items-center space-x-2">
-            <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getReadinessColor(deliverable.readiness)}`}>
-              {deliverable.readiness}
-            </span>
-            {deliverable.target_date && (
-              <span className="text-xs text-gray-500">
-                {new Date(deliverable.target_date).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="relative">
+        <h4 className="font-medium text-gray-900 flex-1">{deliverable.title}</h4>
+        <div className="flex items-center space-x-2">
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${readinessColors[deliverable.readiness]}`}>
+            {deliverable.readiness}
+          </span>
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setShowMenu(!showMenu);
+              setIsExpanded(!isExpanded);
             }}
-            className="text-gray-400 hover:text-gray-600 p-1"
+            className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            title={isExpanded ? "Collapse card" : "Expand card"}
           >
-            <MoreVertical className="h-4 w-4" />
+            {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
-          {showMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit && onEdit(deliverable);
-                  setShowMenu(false);
-                }}
-                className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-              >
-                <Edit3 className="h-4 w-4 mr-2" />
-                Edit
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete && onDelete(deliverable.id);
-                  setShowMenu(false);
-                }}
-                className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </button>
-              <hr className="my-1" />
-              <div className="px-3 py-1 text-xs text-gray-500 font-medium">Change Status:</div>
-              {['planning', 'alignment', 'ready', 'executing', 'blocked', 'review', 'complete'].map(status => (
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu(!showMenu);
+              }}
+              className="p-1 text-gray-400 hover:text-gray-600 rounded"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {showMenu && (
+              <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-32">
                 <button
-                  key={status}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdateReadiness && onUpdateReadiness(deliverable.id, status);
+                    onEdit && onEdit(deliverable);
                     setShowMenu(false);
                   }}
-                  className={`w-full text-left px-3 py-2 text-sm capitalize hover:bg-gray-100 ${
-                    deliverable.readiness === status ? 'bg-gray-100 font-medium' : 'text-gray-700'
-                  }`}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
                 >
-                  {status}
+                  Edit
                 </button>
-              ))}
-            </div>
-          )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete && onDelete(deliverable.id);
+                    setShowMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-100"
+                >
+                  Delete
+                </button>
+                <hr className="my-1" />
+                <div className="px-3 py-1 text-xs text-gray-500 font-medium">Change Status:</div>
+                {['planning', 'alignment', 'ready', 'executing', 'blocked', 'review', 'complete'].map(status => (
+                  <button
+                    key={status}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateReadiness && onUpdateReadiness(deliverable.id, status);
+                      setShowMenu(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm capitalize hover:bg-gray-100 ${
+                      deliverable.readiness === status ? 'bg-gray-100 font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
+            {/* Expanded content - only show when isExpanded is true */}
       {isExpanded && (
         <>
           <p className="text-gray-600 text-sm mb-3 line-clamp-2">{deliverable.description}</p>
@@ -1161,6 +1073,7 @@ const DeliverableCard = ({ deliverable, onToggleChecklistItem, onEdit, onDelete,
         </>
       )}
 
+      {/* Collapsed checklist preview - show when not expanded */}
       {!isExpanded && deliverable.checklist && deliverable.checklist.length > 0 && (
         <div className="mt-2 space-y-1">
           {deliverable.checklist.slice(0, 2).map(item => (
@@ -1200,7 +1113,6 @@ const DeliverableCard = ({ deliverable, onToggleChecklistItem, onEdit, onDelete,
   );
 };
 
-// DeliverableModal Component - Complete from original
 const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSave, onClose, onCreateStream, onRequestRecommit, deliverables, users }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -1216,6 +1128,7 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
   const [bulkChecklistInput, setBulkChecklistInput] = useState('');
   const [showNewStreamInput, setShowNewStreamInput] = useState(false);
   const [newStreamName, setNewStreamName] = useState('');
+  const [activeTab, setActiveTab] = useState('All');
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [dependencies, setDependencies] = useState([]);
@@ -1224,6 +1137,7 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
   const [editingComment, setEditingComment] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
 
+  // Populate form when editing existing deliverable
   useEffect(() => {
     if (editingDeliverable) {
       setTitle(editingDeliverable.title || '');
@@ -1240,8 +1154,11 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
     }
   }, [editingDeliverable]);
 
+  // Handle target date changes with recommit logic
   const handleTargetDateChange = (newDate) => {
+    // If editing existing deliverable and date is changing
     if (editingDeliverable && editingDeliverable.target_date && editingDeliverable.target_date !== newDate) {
+      // Trigger recommit modal
       const recommitInfo = {
         deliverable: editingDeliverable,
         oldDate: editingDeliverable.target_date,
@@ -1250,26 +1167,36 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
         explanation: ''
       };
       
+      // Pass recommit data to parent component
       if (onRequestRecommit) {
         onRequestRecommit(recommitInfo);
       } else {
+        // Fallback: just set the date (for now)
         setTargetDate(newDate);
       }
     } else {
+      // New deliverable or no date change
       setTargetDate(newDate);
     }
   };
 
   const handleCreateNewStream = () => {
+    console.log('handleCreateNewStream called!');
     if (newStreamName.trim()) {
       const newStream = {
-        id: SupabaseProjectStorage.generateId(),
+        id: ProjectAwareDataStorage.generateId(),
         name: newStreamName.trim(),
-        color: '#8B5CF6'
+        color: '#8B5CF6' // Default purple color
       };
       
+      console.log('Creating new stream:', newStream);
+      
+      // Call the parent component's function to add the stream
       if (onCreateStream) {
+        console.log('Calling onCreateStream with:', newStream);
         onCreateStream(newStream);
+      } else {
+        console.log('onCreateStream is not available');
       }
       
       setStreamId(newStream.id);
@@ -1281,10 +1208,10 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
   const handleAddComment = () => {
     if (newComment.trim()) {
       const comment = {
-        id: SupabaseProjectStorage.generateId(),
+        id: ProjectAwareDataStorage.generateId(),
         text: newComment.trim(),
         timestamp: new Date().toISOString(),
-        author: 'Current User'
+        author: 'Current User' // This would come from auth
       };
       setComments([...comments, comment]);
       setNewComment('');
@@ -1320,7 +1247,7 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
   const handleAddChecklistItem = () => {
     if (checklistInput.trim()) {
       const newItem = new ChecklistItem(
-        SupabaseProjectStorage.generateId(),
+        ProjectAwareDataStorage.generateId(),
         checklistInput.trim()
       );
       setChecklist([...checklist, newItem]);
@@ -1330,24 +1257,28 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
 
   const handleBulkImportChecklist = () => {
     if (bulkChecklistInput.trim()) {
+      // Split by lines and clean up each line
       const lines = bulkChecklistInput
         .split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0)
         .map(line => {
+          // Remove common prefixes like bullets, numbers, tabs
           return line
-            .replace(/^[-•*]\s*/, '')
-            .replace(/^\d+\.\s*/, '')
-            .replace(/^\t+/, '')
+            .replace(/^[-•*]\s*/, '') // Remove bullet points
+            .replace(/^\d+\.\s*/, '') // Remove numbered lists
+            .replace(/^\t+/, '') // Remove tabs
             .trim();
         })
         .filter(line => line.length > 0);
 
+      // Create checklist items for each line
       const newItems = lines.map(line => new ChecklistItem(
-        SupabaseProjectStorage.generateId(),
+        ProjectAwareDataStorage.generateId(),
         line
       ));
 
+      // Add to existing checklist
       setChecklist([...checklist, ...newItems]);
       setBulkChecklistInput('');
       setShowBulkInput(false);
@@ -1383,17 +1314,20 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
   const handleSubmit = (e) => {
     e.preventDefault();
     if (title.trim()) {
+      // If we're creating a new stream, create it first
       if (showNewStreamInput && newStreamName.trim()) {
         const newStream = {
-          id: SupabaseProjectStorage.generateId(),
+          id: ProjectAwareDataStorage.generateId(),
           name: newStreamName.trim(),
           color: '#8B5CF6'
         };
         
+        // Create the stream first
         if (onCreateStream) {
           onCreateStream(newStream);
         }
         
+        // Use the new stream ID for the deliverable
         onSave({
           title: title.trim(),
           description: description.trim(),
@@ -1408,6 +1342,7 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
           dependencies
         });
       } else {
+        // Normal submission
         onSave({
           title: title.trim(),
           description: description.trim(),
@@ -1438,7 +1373,9 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
             className="text-gray-400 hover:text-gray-600 p-1"
             title="Close"
           >
-            <X className="h-6 w-6" />
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
         
@@ -1510,17 +1447,7 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
                       onClick={handleCreateNewStream}
                       className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
                     >
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowNewStreamInput(false);
-                        setNewStreamName('');
-                      }}
-                      className="px-3 py-2 text-gray-400 hover:text-gray-600"
-                    >
-                      <X className="h-4 w-4" />
+                      Add
                     </button>
                   </div>
                 )}
@@ -1552,13 +1479,23 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Owner Name
               </label>
-              <input
-                type="text"
+              <select
                 value={ownerName}
                 onChange={(e) => setOwnerName(e.target.value)}
-                placeholder="John Doe"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+              >
+                <option value="">Select owner...</option>
+                {[...users].sort((a, b) => a.name.localeCompare(b.name)).map(user => (
+                  <option key={user.id} value={user.name}>
+                    {user.name} ({user.role})
+                  </option>
+                ))}
+              </select>
+              {users.length === 0 && (
+                <p className="text-sm text-gray-500 mt-1">
+                  Add team members in L0 Whiteboard to select owner.
+                </p>
+              )}
             </div>
             
             <div>
@@ -1610,6 +1547,378 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
             />
           </div>
           
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Checklist
+            </label>
+            
+            {/* Bulk Import Toggle */}
+            <div className="mb-3 flex space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkInput(!showBulkInput)}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  showBulkInput 
+                    ? 'bg-blue-100 text-blue-700 border border-blue-300' 
+                    : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
+                }`}
+              >
+                {showBulkInput ? 'Single Item' : 'Bulk Import'}
+              </button>
+              {showBulkInput && (
+                <span className="text-xs text-gray-500 self-center">
+                  Paste from Excel or list format
+                </span>
+              )}
+            </div>
+
+            {/* Bulk Import Area */}
+            {showBulkInput && (
+              <div className="mb-4 p-3 border border-blue-200 rounded-lg bg-blue-50">
+                <textarea
+                  value={bulkChecklistInput}
+                  onChange={(e) => setBulkChecklistInput(e.target.value)}
+                  placeholder="Paste your checklist here (one item per line)&#10;Example:&#10;• Review requirements&#10;1. Create wireframes&#10;Test functionality&#10;Deploy to production"
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+                <div className="flex space-x-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleBulkImportChecklist}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Import Items
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkChecklistInput('');
+                      setShowBulkInput(false);
+                    }}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Checklist Items */}
+            {checklist.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {checklist.map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-white">
+                    {editingChecklistItem === item.id ? (
+                      <div className="flex items-center space-x-2 flex-1">
+                        <input
+                          type="text"
+                          value={editingChecklistText}
+                          onChange={(e) => setEditingChecklistText(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveChecklistEdit(item.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              handleCancelChecklistEdit();
+                            }
+                          }}
+                          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveChecklistEdit(item.id)}
+                          className="text-green-600 hover:text-green-800"
+                        >
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelChecklistEdit}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center space-x-2 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={item.done || false}
+                            onChange={() => {
+                              const updatedChecklist = checklist.map(checkItem => 
+                                checkItem.id === item.id 
+                                  ? { ...checkItem, done: !checkItem.done, done_at: !checkItem.done ? new Date().toISOString() : null }
+                                  : checkItem
+                              );
+                              setChecklist(updatedChecklist);
+                            }}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span 
+                            className={`text-sm flex-1 ${item.done ? 'line-through text-gray-500' : 'text-gray-700'}`}
+                          >
+                            {item.text}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => handleEditChecklistItem(item)}
+                            className="p-1 text-blue-600 hover:text-blue-800 transition-colors"
+                            title="Edit item"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveChecklistItem(item.id)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Delete item"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {/* Add New Item - Single Mode */}
+            {!showBulkInput && (
+              <>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={checklistInput}
+                    onChange={(e) => setChecklistInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddChecklistItem())}
+                    placeholder="Add checklist item..."
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                
+                {/* Add Item Button */}
+                <button
+                  type="button"
+                  onClick={handleAddChecklistItem}
+                  className="mt-3 w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Add Item
+                </button>
+              </>
+            )}
+          </div>
+          
+          {/* Dependencies Section */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Dependencies
+            </label>
+            
+            {/* Current Dependencies */}
+            {dependencies.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {dependencies.map(depId => {
+                  const dependentDeliverable = deliverables?.find(d => d.id === depId);
+                  if (!dependentDeliverable) return null;
+                  
+                  return (
+                    <div key={depId} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-white">
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-gray-900">{dependentDeliverable.title}</span>
+                        <div className="text-xs text-gray-500">
+                          Status: {dependentDeliverable.readiness}
+                          {dependentDeliverable.target_date && (
+                            <span> • Target: {new Date(dependentDeliverable.target_date).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDependencies(dependencies.filter(id => id !== depId))}
+                        className="ml-3 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* Add Dependency Dropdown */}
+            <div>
+              <select
+                value=""
+                onChange={(e) => {
+                  if (e.target.value && !dependencies.includes(e.target.value)) {
+                    setDependencies([...dependencies, e.target.value]);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              >
+                <option value="">Add dependency...</option>
+                {deliverables?.filter(d => 
+                  d.id !== editingDeliverable?.id && // Don't allow self-dependency
+                  !dependencies.includes(d.id) // Don't show already selected dependencies
+                ).sort((a, b) => a.title.localeCompare(b.title)).map(deliverable => (
+                  <option key={deliverable.id} value={deliverable.id}>
+                    {deliverable.title} ({deliverable.readiness})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          {/* Activity Section */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Activity
+            </label>
+            <div className="border border-gray-200 rounded-lg">
+              {/* Activity Tabs */}
+              <div className="flex border-b border-gray-200">
+                <button
+                  type="button"
+                  className="px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600"
+                >
+                  Comments
+                </button>
+              </div>
+              
+              {/* Activity Content */}
+              <div className="p-4">
+                <div className="space-y-3">
+                  {/* Add Comment */}
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddComment())}
+                      placeholder="Add a comment..."
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddComment}
+                      className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                    >
+                      Comment
+                    </button>
+                  </div>
+                  
+                  {/* Comments List */}
+                  {comments.length > 0 ? (
+                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                      {comments.map(comment => (
+                        <div key={comment.id} className="bg-gray-50 p-3 rounded-lg">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium text-gray-900">{comment.author}</span>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs text-gray-500">
+                                {new Date(comment.timestamp).toLocaleDateString()}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleEditComment(comment)}
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteComment(comment.id)}
+                                className="text-xs text-red-600 hover:text-red-800"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                          {editingComment === comment.id ? (
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="text"
+                                value={editingCommentText}
+                                onChange={(e) => setEditingCommentText(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveCommentEdit(comment.id);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') {
+                                    handleCancelCommentEdit();
+                                  }
+                                }}
+                                className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveCommentEdit(comment.id)}
+                                className="text-green-600 hover:text-green-800"
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelCommentEdit}
+                                className="text-gray-400 hover:text-gray-600"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-700">
+                              {comment.text.split(/(\s+)/).map((part, index) => {
+                                const urlRegex = /^https?:\/\/[^\s]+$/;
+                                if (urlRegex.test(part)) {
+                                  return (
+                                    <a
+                                      key={index}
+                                      href={part}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                      {part}
+                                    </a>
+                                  );
+                                }
+                                return part;
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 text-center py-4">No comments yet</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <div className="flex space-x-3 pt-4">
             <button
               type="button"
@@ -1620,9 +1929,9 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
             >
-              {editingDeliverable ? 'Update' : 'Create'} Deliverable
+              Create/Save
             </button>
           </div>
         </form>
@@ -1631,22 +1940,10 @@ const DeliverableModal = ({ streams, selectedStreamId, editingDeliverable, onSav
   );
 };
 
-// CreateStreamModal Component
 const CreateStreamModal = ({ onSave, onClose }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedColor, setSelectedColor] = useState('#8B5CF6');
-
-  const streamColors = [
-    { name: 'Purple', value: '#8B5CF6' },
-    { name: 'Blue', value: '#3B82F6' },
-    { name: 'Green', value: '#10B981' },
-    { name: 'Red', value: '#EF4444' },
-    { name: 'Yellow', value: '#F59E0B' },
-    { name: 'Pink', value: '#EC4899' },
-    { name: 'Indigo', value: '#6366F1' },
-    { name: 'Teal', value: '#14B8A6' }
-  ];
+  const [selectedColor, setSelectedColor] = useState(RTG_STREAM_COLORS[0].value);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1662,7 +1959,8 @@ const CreateStreamModal = ({ onSave, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Create New Stream</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Add Stream</h3>
+        <p className="text-sm text-gray-600 mb-4">Create a new domain/stream for organizing deliverables</p>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -1673,8 +1971,8 @@ const CreateStreamModal = ({ onSave, onClose }) => {
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Enter stream name..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="e.g., OHCA, Security, Infrastructure..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               required
             />
           </div>
@@ -1686,18 +1984,18 @@ const CreateStreamModal = ({ onSave, onClose }) => {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the stream purpose..."
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+              placeholder="Brief description of this stream..."
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Color
             </label>
-            <div className="grid grid-cols-4 gap-3">
-              {streamColors.map(color => (
+            <div className="grid grid-cols-5 gap-2">
+              {RTG_STREAM_COLORS.map(color => (
                 <button
                   key={color.value}
                   type="button"
@@ -1733,7 +2031,6 @@ const CreateStreamModal = ({ onSave, onClose }) => {
   );
 };
 
-// PromoteFromL0Modal Component
 const PromoteFromL0Modal = ({ notes, onPromote, onClose }) => {
   const [selectedNotes, setSelectedNotes] = useState([]);
 
@@ -1771,7 +2068,7 @@ const PromoteFromL0Modal = ({ notes, onPromote, onClose }) => {
               <div className="flex-1">
                 <h4 className="font-medium text-gray-900">{note.title}</h4>
                 <p className="text-sm text-gray-600 mt-1">{note.description}</p>
-                {note.tags && note.tags.length > 0 && (
+                {note.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
                     {note.tags.map((tag, index) => (
                       <span
@@ -1808,7 +2105,7 @@ const PromoteFromL0Modal = ({ notes, onPromote, onClose }) => {
   );
 };
 
-// RecommitModal Component
+// Recommit Modal Component
 const RecommitModal = ({ isOpen, recommitData, onConfirm, onCancel }) => {
   const [reason, setReason] = useState('');
   const [explanation, setExplanation] = useState('');
@@ -1913,7 +2210,6 @@ const RecommitModal = ({ isOpen, recommitData, onConfirm, onCancel }) => {
   );
 };
 
-// StreamCompletionModal Component
 const StreamCompletionModal = ({ stream, onConfirm, onCancel }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
