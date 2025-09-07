@@ -1,5 +1,5 @@
 /*
- * ProgramBoardLevel.jsx - L1 Program Board Component 
+ * ProgramBoardLevel.jsx - L1 Program Board Component
  * VERSION: v2.1.3 - 2025-08-21 09:45:00
  * ENHANCEMENTS: Fixed StreamColumn errors, user assignment functionality, function name references
  * LAST MODIFIED: 2025-08-21 09:45:00
