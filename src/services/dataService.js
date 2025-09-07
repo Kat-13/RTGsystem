@@ -34,12 +34,19 @@ class DataService {
         return null;
       }
 
-      this.currentProjectId = newProject[0].id;
+      // FIX: Add proper null checking before accessing array element
+      if (newProject && newProject.length > 0) {
+        this.currentProjectId = newProject[0].id;
+      } else {
+        console.error('No project data returned from createProject');
+        return null;
+      }
 
       // Initialize with starter data (the training card)
       await this.createStarterData(userId);
 
-      return newProject[0];
+      // FIX: Add proper null checking before returning array element
+      return newProject && newProject.length > 0 ? newProject[0] : null;
     } catch (error) {
       console.error('Error initializing user project:', error);
       return null;
