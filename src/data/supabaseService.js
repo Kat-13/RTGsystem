@@ -1,5 +1,5 @@
-// Supabase Service - Exact replacement for ProjectAwareDataStorage
-// Uses user_id consistently (no owner_id)
+// Supabase Service - Complete replacement for ProjectAwareDataStorage
+// File: src/data/supabaseService.js
 
 import { supabase } from '../lib/supabase';
 
@@ -254,7 +254,7 @@ export class SupabaseProjectStorage {
   }
 
   // Users operations
-  static async saveUsers(projectId, users) {
+  static async saveProjectUsers(projectId, users) {
     // Delete existing users for this project
     await supabase
       .from('users')
@@ -274,7 +274,7 @@ export class SupabaseProjectStorage {
     }
   }
 
-  static async loadUsers(projectId) {
+  static async loadProjectUsers(projectId) {
     const { data, error } = await supabase
       .from('users')
       .select('*')
@@ -287,11 +287,13 @@ export class SupabaseProjectStorage {
 
   // User management methods (replaces ProjectAwareDataStorage user methods)
   static async saveUsers(users) {
-    return this.save('users', users);
+    const projectId = this.getCurrentProject();
+    return this.saveProjectUsers(projectId, users);
   }
 
   static async loadUsers() {
-    return this.load('users', []);
+    const projectId = this.getCurrentProject();
+    return this.loadProjectUsers(projectId);
   }
 
   static async addUser(user) {
