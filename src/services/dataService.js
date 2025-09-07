@@ -1,235 +1,257 @@
-import { database } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
-class DataService {
-  constructor() {
-    this.currentProjectId = null;
+// Data service to replace localStorage with Supabase
+export class DataService {
+  constructor(userId) {
+    this.userId = userId;
   }
 
-  // Initialize user's default project
-  async initializeUserProject(userId) {
+  // Projects
+  async getProjects() {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('created_by', this.userId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createProject(projectData) {
+    const { data, error } = await supabase
+      .from('projects')
+      .insert([{
+        ...projectData,
+        created_by: this.userId
+      }])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  // Streams
+  async getStreams(projectId) {
+    const { data, error } = await supabase
+      .from('streams')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createStream(streamData) {
+    const { data, error } = await supabase
+      .from('streams')
+      .insert([streamData])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async updateStream(streamId, updates) {
+    const { data, error } = await supabase
+      .from('streams')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', streamId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteStream(streamId) {
+    const { error } = await supabase
+      .from('streams')
+      .delete()
+      .eq('id', streamId);
+    
+    if (error) throw error;
+  }
+
+  // Functional Deliverables
+  async getDeliverables(projectId) {
+    const { data, error } = await supabase
+      .from('functional_deliverables')
+      .select(`
+        *,
+        checklist_items (*)
+      `)
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createDeliverable(deliverableData) {
+    const { data, error } = await supabase
+      .from('functional_deliverables')
+      .insert([deliverableData])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async updateDeliverable(deliverableId, updates) {
+    const { data, error } = await supabase
+      .from('functional_deliverables')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', deliverableId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteDeliverable(deliverableId) {
+    const { error } = await supabase
+      .from('functional_deliverables')
+      .delete()
+      .eq('id', deliverableId);
+    
+    if (error) throw error;
+  }
+
+  // Checklist Items
+  async getChecklistItems(deliverableId) {
+    const { data, error } = await supabase
+      .from('checklist_items')
+      .select('*')
+      .eq('deliverable_id', deliverableId)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
+  }
+
+  async createChecklistItem(itemData) {
+    const { data, error } = await supabase
+      .from('checklist_items')
+      .insert([itemData])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async updateChecklistItem(itemId, updates) {
+    const { data, error } = await supabase
+      .from('checklist_items')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async deleteChecklistItem(itemId) {
+    const { error } = await supabase
+      .from('checklist_items')
+      .delete()
+      .eq('id', itemId);
+    
+    if (error) throw error;
+  }
+
+  // Utility methods for RTG compatibility
+  async initializeDefaultProject() {
+    // Create a default project for new users
+    const defaultProject = await this.createProject({
+      name: 'Default Project',
+      description: 'Your RTG workspace',
+      status: 'Active'
+    });
+
+    return defaultProject;
+  }
+
+  // Migration helper - convert localStorage data to Supabase
+  async migrateFromLocalStorage() {
     try {
-      // Check if user already has projects
-      const { data: projects, error } = await database.getProjects();
-
-      if (error) {
-        console.error('Error getting projects:', error);
-        return null;
+      // Check if user already has data in Supabase
+      const existingProjects = await this.getProjects();
+      if (existingProjects.length > 0) {
+        return; // User already has cloud data
       }
 
-      if (projects && projects.length > 0) {
-        // User has existing projects, use the first one
-        this.currentProjectId = projects[0].id;
-        return projects[0];
+      // Get localStorage data
+      const localStreams = JSON.parse(localStorage.getItem('rtg_ae_project_default_streams') || '[]');
+      const localDeliverables = JSON.parse(localStorage.getItem('rtg_ae_project_default_functional_deliverables') || '[]');
+
+      if (localStreams.length === 0 && localDeliverables.length === 0) {
+        return; // No local data to migrate
       }
 
-      // Create default project for new user -- PASS userId as third argument!
-      const { data: newProject, error: createError } = await database.createProject(
-        'Default Project',
-        'Your main project workspace',
-        userId // <-- Pass userId here!
-      );
+      // Create default project
+      const project = await this.initializeDefaultProject();
 
-      if (createError) {
-        console.error('Error creating project:', createError);
-        return null;
+      // Migrate streams
+      const streamMapping = {};
+      for (const localStream of localStreams) {
+        const newStream = await this.createStream({
+          project_id: project.id,
+          name: localStream.name,
+          description: localStream.description || '',
+          color: localStream.color || '#3B82F6',
+          collapsed: localStream.collapsed || false
+        });
+        streamMapping[localStream.id] = newStream.id;
       }
 
-      this.currentProjectId = newProject[0].id;
+      // Migrate deliverables
+      for (const localDeliverable of localDeliverables) {
+        const newDeliverable = await this.createDeliverable({
+          project_id: project.id,
+          stream_id: streamMapping[localDeliverable.stream_id],
+          title: localDeliverable.title,
+          description: localDeliverable.description || '',
+          target_date: localDeliverable.target_date,
+          original_date: localDeliverable.original_date,
+          assigned_user: localDeliverable.assigned_user || '',
+          owner: localDeliverable.owner || '',
+          status: localDeliverable.status || 'Not Started',
+          priority: localDeliverable.priority || 'Medium',
+          planning_accuracy_score: localDeliverable.planning_accuracy_score || 100
+        });
 
-      // Initialize with starter data (the training card)
-      await this.createStarterData(userId);
-
-      return newProject[0];
-    } catch (error) {
-      console.error('Error initializing user project:', error);
-      return null;
-    }
-  }
-
-  async createStarterData(userId) {
-    // Create the "Getting Started" stream
-    const starterStream = {
-      id: 'getting_started',
-      name: 'Getting Started',
-      color: '#3B82F6',
-      description: 'Training and setup guidance',
-      user_id: userId
-    };
-
-    await database.saveStreams(this.currentProjectId, [starterStream]);
-
-    // Create the training deliverable
-    const starterDeliverable = {
-      id: 'training_card_001',
-      title: 'RTG System Quick Start Guide',
-      description: 'Welcome to your RTG Program Board! This interactive guide will help you learn the key features.',
-      stream_id: 'getting_started',
-      readiness: 'ready',
-      target_date: null,
-      promoted_from_l0: null,
-      checklist: [
-        { id: 'guide_001', text: 'Click the collapse button to minimize streams', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_002', text: 'Drag cards between streams to reorganize', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_003', text: 'Use the Add Deliverable button to create new cards', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_004', text: 'Click on any card to edit details and add checklists', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_005', text: 'Set readiness levels: Planning to Alignment to Ready to Executing to Review to Complete', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_006', text: 'Add dependencies between deliverables', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_007', text: 'Check off checklist items as you complete them', done: false, created_at: new Date().toISOString() },
-        { id: 'guide_008', text: 'Delete this card when you are ready to start your real project', done: false, created_at: new Date().toISOString() }
-      ],
-      owner_name: 'RTG System',
-      owner_email: 'support@rtgsystem.com',
-      comments: [
-        {
-          id: 'welcome_comment',
-          text: 'Pro tip: Try each feature as you check it off! This card demonstrates all the key functionality you will use in your projects.',
-          timestamp: new Date().toISOString(),
-          author: 'RTG Guide'
+        // Migrate checklist items
+        if (localDeliverable.checklist && localDeliverable.checklist.length > 0) {
+          for (const item of localDeliverable.checklist) {
+            await this.createChecklistItem({
+              deliverable_id: newDeliverable.id,
+              text: item.text,
+              done: item.done || false,
+              done_at: item.done ? new Date().toISOString() : null
+            });
+          }
         }
-      ],
-      dependencies: [],
-      recommit_count: 0,
-      recommit_history: [],
-      user_id: userId
-    };
+      }
 
-    await database.saveDeliverables(this.currentProjectId, [starterDeliverable]);
-  }
-
-  // Simple data methods that work directly with Supabase
-  async getStreams() {
-    if (!this.currentProjectId) return [];
-
-    try {
-      const { data, error } = await database.getStreams(this.currentProjectId);
-      if (error) throw error;
-      return data || [];
+      console.log('✅ Successfully migrated localStorage data to Supabase');
     } catch (error) {
-      console.error('Error loading streams:', error);
-      return [];
+      console.error('❌ Error migrating localStorage data:', error);
     }
   }
-
-  async saveStreams(userId, streams) {
-    if (!this.currentProjectId) return { success: false, error: 'No project selected' };
-
-    try {
-      const streamsWithUserId = streams.map(stream => ({
-        ...stream,
-        user_id: userId
-      }));
-      const { error } = await database.saveStreams(this.currentProjectId, streamsWithUserId);
-      if (error) throw error;
-      return { success: true };
-    } catch (error) {
-      console.error('Error saving streams:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async getDeliverables() {
-    if (!this.currentProjectId) return [];
-
-    try {
-      const { data, error } = await database.getDeliverables(this.currentProjectId);
-      if (error) throw error;
-      return data || [];
-    } catch (error) {
-      console.error('Error loading deliverables:', error);
-      return [];
-    }
-  }
-
-  async saveDeliverables(userId, deliverables) {
-    if (!this.currentProjectId) return { success: false, error: 'No project selected' };
-
-    try {
-      const deliverablesWithUserId = deliverables.map(deliverable => ({
-        ...deliverable,
-        user_id: userId
-      }));
-      const { error } = await database.saveDeliverables(this.currentProjectId, deliverablesWithUserId);
-      if (error) throw error;
-      return { success: true };
-    } catch (error) {
-      console.error('Error saving deliverables:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async getTracks() {
-    if (!this.currentProjectId) return [];
-
-    try {
-      const { data, error } = await database.getTracks(this.currentProjectId);
-      if (error) throw error;
-      return data || [];
-    } catch (error) {
-      console.error('Error loading tracks:', error);
-      return [];
-    }
-  }
-
-  async saveTracks(userId, tracks) {
-    if (!this.currentProjectId) return { success: false, error: 'No project selected' };
-
-    try {
-      const tracksWithUserId = tracks.map(track => ({
-        ...track,
-        user_id: userId
-      }));
-      const { error } = await database.saveTracks(this.currentProjectId, tracksWithUserId);
-      if (error) throw error;
-      return { success: true };
-    } catch (error) {
-      console.error('Error saving tracks:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async getWhiteboardNotes() {
-    if (!this.currentProjectId) return [];
-
-    try {
-      const { data, error } = await database.getWhiteboardNotes(this.currentProjectId);
-      if (error) throw error;
-
-      // Convert database format to app format for compatibility
-      return (data || []).map(note => ({
-        text: note.content,
-        content: note.content,
-        position: note.position || { x: 0, y: 0 },
-        id: note.id
-      }));
-    } catch (error) {
-      console.error('Error loading whiteboard notes:', error);
-      return [];
-    }
-  }
-
-  async saveWhiteboardNotes(userId, notes) {
-    if (!this.currentProjectId) return { success: false, error: 'No project selected' };
-
-    try {
-      // Convert app format to database format
-      const processedNotes = notes.map(note => ({
-        id: note.id || crypto.randomUUID(),
-        content: note.text || note.content || '',
-        position: note.position || { x: 0, y: 0 },
-        user_id: userId
-      }));
-
-      const { error } = await database.saveWhiteboardNotes(this.currentProjectId, processedNotes);
-      if (error) throw error;
-      return { success: true };
-    } catch (error) {
-      console.error('Error saving whiteboard notes:', error);
-      return { success: false, error: error.message };
-    }
-  }
-
-  // All other methods in your original file, unchanged
-  // ... (insert non-project-related methods here, if any)
 }
 
-export default new DataService();
+// Helper function to get data service instance
+export const getDataService = (user) => {
+  if (!user?.sub) {
+    throw new Error('User not authenticated');
+  }
+  return new DataService(user.sub);
+};
