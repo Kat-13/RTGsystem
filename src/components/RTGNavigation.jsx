@@ -1,60 +1,41 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
+import { SupabaseProjectStorage } from '../data/supabaseService';
 import { supabase } from '../lib/supabase.js';
 
-const RTGNavigation = ({ currentLevel, onLevelChange }) => {
+const RTGNavigation = ({ currentLevel, onLevelChange, currentProject, onProjectChange }) => {
   const [projects, setProjects] = useState([]);
-  const [currentProject, setCurrentProject] = useState(null);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // Fetch projects once on mount, using Supabase client (no query-string REST)
+  // Fetch projects once on mount
   const loadProjects = useCallback(async () => {
     setLoadingProjects(true);
     try {
-      const { data: userRes, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !userRes?.user) {
-        setProjects([]);
-        setCurrentProject(null);
-        return;
+      const projectList = await SupabaseProjectStorage.getProjects();
+      setProjects(projectList);
+
+      // If no current project is selected and we have projects, select the first one
+      if (!currentProject && projectList.length > 0) {
+        onProjectChange(projectList[0]);
       }
-
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error getting projects:', error);
-        setProjects([]);
-        setCurrentProject(null);
-        return;
-      }
-
-      const list = data || [];
-      setProjects(list);
-
-      // If nothing selected yet, default to first project (if any)
-      setCurrentProject((prev) => {
-        if (!prev) return list[0] ?? null;
-        const stillExists = list.find((p) => p.id === prev.id);
-        return stillExists ? prev : (list[0] ?? null);
-      });
+    } catch (error) {
+      console.error('Error loading projects:', error);
+      setProjects([]);
     } finally {
       setLoadingProjects(false);
     }
-  }, []);
+  }, [currentProject, onProjectChange]);
 
   useEffect(() => {
-    loadProjects(); // run once
+    loadProjects();
   }, [loadProjects]);
 
-  const handleProjectSwitch = (id) => {
-    const p = projects.find((proj) => proj.id === id) || null;
-    setCurrentProject(p);
+  const handleProjectSwitch = (project) => {
+    onProjectChange(project);
     setShowProjectDropdown(false);
   };
 
@@ -62,34 +43,15 @@ const RTGNavigation = ({ currentLevel, onLevelChange }) => {
     if (!newProjectName.trim()) return;
     setCreating(true);
     try {
-      const { data: userRes, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !userRes?.user) {
-        console.error('Not authenticated');
-        return;
-      }
-      const { user } = userRes;
-
-      // Insert with user_id as owner
-      const { data, error } = await supabase
-        .from('projects')
-        .insert({
-          name: newProjectName.trim(),
-          description: null,
-          user_id: user.id,
-        })
-        .select('*')
-        .single();
-
-      if (error) {
-        console.error('Create project failed:', error);
-        return;
-      }
-
-      // Refresh list & select the new project (no reload)
+      const newProject = await SupabaseProjectStorage.createProject(newProjectName.trim());
+      
+      // Refresh project list and select the new project
       await loadProjects();
-      setCurrentProject(data || null);
+      onProjectChange(newProject);
       setNewProjectName('');
       setShowNewProjectModal(false);
+    } catch (error) {
+      console.error('Create project failed:', error);
     } finally {
       setCreating(false);
     }
@@ -97,7 +59,6 @@ const RTGNavigation = ({ currentLevel, onLevelChange }) => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // Optional: navigate to a public route
     window.location.assign('/');
   };
 
@@ -145,7 +106,7 @@ const RTGNavigation = ({ currentLevel, onLevelChange }) => {
                     {projects.map((project) => (
                       <button
                         key={project.id}
-                        onClick={() => handleProjectSwitch(project.id)}
+                        onClick={() => handleProjectSwitch(project)}
                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
                           currentProject?.id === project.id
                             ? 'bg-blue-50 text-blue-700'
