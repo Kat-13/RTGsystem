@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js' 
 
 // Use Vite's import.meta.env for environment variables
 // Hardcoded Supabase credentials for local testing.
